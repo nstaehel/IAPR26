@@ -36,37 +36,52 @@ def init_weights(module):
 
 # --------------------------------------------------------------------------------
 
-def train_epoch(model, train_loader, optimizer, loss_fn):
+def train_epoch(model, train_dataset, optimizer, loss_fn, batch_size, batch_size_simul=1, epoch_permutation=None):
+    if (epoch_permutation == None):
+        epoch_permutation = torch.arange(len(train_dataset))
     running_loss = 0.0
     model.train()
-    for inputs, labels in train_loader:
-        optimizer.zero_grad()
-        preds = model(inputs)
-        loss = loss_fn(preds, labels)
-        loss.backward()
+    optimizer.zero_grad()
+    for batch_idx in range(len(train_dataset) // batch_size):
+        for sub_batch_idx in range(batch_size // batch_size_simul):
+            start_idx = batch_idx*batch_size
+            inputs, labels = train_dataset.__getitem__(epoch_permutation[start_idx])
+            inputs = inputs.unsqueeze(0)
+            labels = labels.unsqueeze(0)
+            for idx in range(1, batch_size_simul):
+                next_inputs, next_labels = train_dataset.__getitem__(epoch_permutation[start_idx + idx])
+                inputs = torch.cat((inputs, next_inputs.unsqueeze(0)), dim=0)
+                labels = torch.cat((labels, next_labels.unsqueeze(0)), dim=0)
+            preds = model(inputs)
+            loss = loss_fn(preds, labels)
+            loss.backward()
+            running_loss += loss.item()
+            del loss
+            del preds
         optimizer.step()
-        running_loss += loss.item()
-        del loss
-        del preds
-    return running_loss / len(train_loader)
+        optimizer.zero_grad()
+    return running_loss / len(train_dataset)
     
-def valid_epoch(model, test_loader, loss_fn, output_transform):
+def valid_epoch(model, val_dataset, loss_fn, output_transform):
     model.eval()
     running_loss = 0.0
     running_f1_loss = 0.0
     with torch.no_grad():
-        for inputs, labels in test_loader:
+        for inputs, labels in val_dataset:
+            inputs = inputs.unsqueeze(0)
+            labels = labels.unsqueeze(0)
             preds = model(inputs)
             loss = loss_fn(preds, labels)
             running_loss += loss.item()
             running_f1_loss += f1_score(labels, preds, output_transform).item()
             del loss
             del preds
-        f1 = running_f1_loss / len(test_loader)
-        loss = running_loss / len(test_loader)
+        f1 = running_f1_loss / len(val_dataset)
+        loss = running_loss / len(val_dataset)
     return f1, loss
 
-def train(model, train_loader, val_loader, nb_epochs, optimizer, scheduler, loss_fn, output_transform, checkpoint_path, show_plot=False):
+def train(model, train_dataset, val_dataset, batch_size, nb_epochs, optimizer, scheduler, loss_fn, 
+          output_transform, checkpoint_path, show_plot=False, batch_size_simul=1, generator=torch.Generator().manual_seed(42)):
     # Initialize variable to return
     best_model = model.state_dict()
     best_epoch = 0
@@ -75,8 +90,10 @@ def train(model, train_loader, val_loader, nb_epochs, optimizer, scheduler, loss
     val_losses = []
     val_f1s = []
     for epoch in tqdm(range(nb_epochs)):
-        train_loss = train_epoch(model, train_loader, optimizer, loss_fn)
-        val_f1, val_loss = valid_epoch(model, val_loader, loss_fn, output_transform)
+        epoch_permutation = torch.randperm(len(train_dataset), generator=generator)
+        train_loss = train_epoch(model, train_dataset, optimizer, loss_fn, batch_size, 
+                                 batch_size_simul=batch_size_simul, epoch_permutation=epoch_permutation)
+        val_f1, val_loss = valid_epoch(model, val_dataset, loss_fn, output_transform)
         scheduler.step()
         train_losses.append(train_loss)
         val_losses.append(val_loss)
@@ -122,7 +139,9 @@ def plot_training(best_epoch, val_f1s, val_losses, train_losses, first_epoch_plo
     # Plot losses
     ax[1].plot(epochs_plot, val_losses_plot, label="Val")
     ax[1].plot(epochs_plot, train_losses_plot, label="Train")
-    ax[1].vlines(best_epoch, ymin=min(np.min(train_losses_plot), np.min(val_losses_plot)), ymax=max(np.max(train_losses_plot), np.max(val_losses_plot)), 
+    ax[1].vlines(best_epoch, 
+                 ymin=min(np.min(train_losses_plot), np.min(val_losses_plot)), 
+                 ymax=max(np.max(train_losses_plot), np.max(val_losses_plot)), 
                  color='k', ls='--', label="Best epoch")
     ax[1].set_xlabel("Training steps")
     ax[1].set_ylabel("Loss")
