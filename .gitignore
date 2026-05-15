@@ -3,3 +3,4 @@ iapr-26-uno-vision-challenge/
 checkpoint/
 images
 preprocessed_images
+__pycache__/

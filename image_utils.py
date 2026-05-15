@@ -8,10 +8,9 @@ import torch
 from torchvision.transforms import v2
 import cv2
 
-def get_random_imagepath(img_dir, annotations):
-    image_id_list = list(annotations['image_id'])
-    image_id = random.choice(image_id_list)
-    return os.path.join(img_dir, image_id) + '.jpg'
+def get_random_imagepath(img_dir):
+    image_file = random.choice(os.listdir(img_dir))
+    return os.path.join(img_dir, image_file)
 
 def load_image(image_path, display=True):
     assert os.path.exists(image_path), "Image not found, please check directory structure"
@@ -45,27 +44,6 @@ def hsv_threshold(img, h_thresh, s_thresh, v_thresh):
     img_thresh_v = (img_v >= v_thresh[0]) & (img_v <= v_thresh[1])
     img_thresh = img_thresh_h & img_thresh_s & img_thresh_v
     return img_thresh
-
-def contours_smoothing(img, size_closing=6.0, size_dilation=10.0, size_remove_objects=1500):
-    img = ski.morphology.isotropic_closing(img, size_closing)
-    img = ski.morphology.remove_small_objects(img, min_size=size_remove_objects)
-    img = ski.morphology.isotropic_dilation(img, size_dilation)
-
-    img_binary = (img * 255).astype(np.uint8)
-    img_smooth = cv2.medianBlur(img_binary, 5)
-    return img_smooth
-
-def card_mask(img):
-    img_yellow = hsv_threshold(img, (0.10, 0.17), (0.4, 1.0), (0.9, 1.0))
-    img_red_low = hsv_threshold(img, (0.0, 0.08), (0.7, 1.0), (0.7, 1.0))
-    img_red_up = hsv_threshold(img, (0.95, 1.0), (0.7, 1.0), (0.85, 1.0))
-    img_blue = hsv_threshold(img, (0.5, 0.6), (0.35, 1.0), (0.65, 1.0))
-    img_green = hsv_threshold(img, (0.25, 0.45), (0.35, 1.0), (0.55, 1.0))
-    img_black = hsv_threshold(img, (0.0, 0.1), (0.0, 0.4), (0.0, 0.5))
-
-    img_card_mask = (img_yellow | img_red_low | img_red_up | img_blue | img_green | img_black)
-    img_card_mask_smooth = contours_smoothing(img_card_mask)
-    return img_card_mask_smooth
 
 def divide_image(image, index):
     # Crop the image into 5 cropped images of the same size (given as tensor): 
