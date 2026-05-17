@@ -8,9 +8,6 @@ import torch.nn as nn
 
 def f1_score(labels, preds, output_transform):
     preds = output_transform(preds)
-    # Go from probabilities to number of cards
-    preds = 1.49 * preds / torch.max(preds)
-    labels = labels / torch.min(labels[labels>0])
     zero = torch.zeros_like(preds)
     TP = torch.sum(torch.maximum(zero, torch.minimum(labels, preds)))
     FP = torch.sum(torch.maximum(zero, preds-labels))
@@ -42,25 +39,29 @@ def train_epoch(model, train_dataset, optimizer, loss_fn, batch_size, batch_size
     running_loss = 0.0
     model.train()
     optimizer.zero_grad()
-    for batch_idx in range(len(train_dataset) // batch_size):
-        for sub_batch_idx in range(batch_size // batch_size_simul):
-            start_idx = batch_idx*batch_size
-            inputs, labels = train_dataset.__getitem__(epoch_permutation[start_idx])
-            inputs = inputs.unsqueeze(0)
-            labels = labels.unsqueeze(0)
-            for idx in range(1, batch_size_simul):
-                next_inputs, next_labels = train_dataset.__getitem__(epoch_permutation[start_idx + idx])
-                inputs = torch.cat((inputs, next_inputs.unsqueeze(0)), dim=0)
-                labels = torch.cat((labels, next_labels.unsqueeze(0)), dim=0)
-            preds = model(inputs)
-            loss = loss_fn(preds, labels)
+    batched_inputs = None
+    batched_labels = None
+    for i, sample_idx in enumerate(epoch_permutation.tolist()):
+        if (i % batch_size_simul == 0):
+            batched_inputs, batched_labels = train_dataset.__getitem__(sample_idx)
+            batched_inputs = batched_inputs.unsqueeze(0)
+            batched_labels = batched_labels.unsqueeze(0)
+        else:
+            next_inputs, next_labels = train_dataset.__getitem__(sample_idx)
+            batched_inputs = torch.cat((batched_inputs, next_inputs.unsqueeze(0)), dim=0)
+            batched_labels = torch.cat((batched_labels, next_labels.unsqueeze(0)), dim=0)
+        if ((i + 1) % batch_size_simul == 0):
+            preds = model(batched_inputs)
+            loss = loss_fn(preds, batched_labels)
             loss.backward()
             running_loss += loss.item()
             del loss
             del preds
-        optimizer.step()
-        optimizer.zero_grad()
-    return running_loss / len(train_dataset)
+        if ((i + 1) % batch_size == 0):
+            optimizer.step()
+            optimizer.zero_grad()
+    return running_loss * batch_size_simul / len(train_dataset)
+    
     
 def valid_epoch(model, val_dataset, loss_fn, output_transform):
     model.eval()
@@ -117,7 +118,7 @@ def train(model, train_dataset, val_dataset, batch_size, nb_epochs, optimizer, s
 
 # --------------------------------------------------------------------------------
 
-def plot_training(best_epoch, val_f1s, val_losses, train_losses, first_epoch_plot=1):
+def plot_training(best_epoch, val_f1s, val_losses, train_losses, first_epoch_plot=1, save_filename=None):
     # Create plot
     fig, ax = plt.subplots(1, 2, figsize=(12, 4))
     epochs = np.arange(1, len(val_f1s)+1)
@@ -150,4 +151,6 @@ def plot_training(best_epoch, val_f1s, val_losses, train_losses, first_epoch_plo
     ax[1].grid()
     ax[1].legend()
     plt.tight_layout()
+    if (save_filename != None):
+        plt.savefig(save_filename)
     plt.show()

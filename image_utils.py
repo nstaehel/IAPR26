@@ -8,6 +8,8 @@ import torch
 from torchvision.transforms import v2
 import cv2
 
+random.seed(42)
+
 def get_random_imagepath(img_dir):
     image_file = random.choice(os.listdir(img_dir))
     return os.path.join(img_dir, image_file)
@@ -62,7 +64,7 @@ def divide_image(image, index):
     cropped_image = image[:, centers[index][0]-height_half_d:centers[index][0]+height_half_d, centers[index][1]-width_half_d:centers[index][1]+width_half_d]
     cropped_image = cropped_image.clone()
     if (index == 2) or (index == 4):
-        cropped_image = cropped_image.transpose(-1, -2)
+        cropped_image = cropped_image.transpose(-1, -2).flip(1)
     return cropped_image
 
 def display_tensor_images(imgs, transform=None, shape=None, figsize=(5,5)):
